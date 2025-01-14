@@ -1,16 +1,3 @@
-from gymnasium.wrappers import TimeLimit
-from env_hiv import HIVPatient
-from evaluate import evaluate_HIV, evaluate_HIV_population
-import os
-import random
-from copy import deepcopy
-
-env = TimeLimit(
-    env=HIVPatient(domain_randomization=False), max_episode_steps=200
-)  # The time wrapper limits the number of steps in an episode at 200.
-# Now is the floor is yours to implement the agent and train it.
-
-
 import numpy as np
 import torch
 import torch.nn as nn
@@ -18,9 +5,11 @@ from copy import deepcopy
 import random
 from gymnasium.wrappers import TimeLimit
 from env_hiv import HIVPatient
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 from collections import namedtuple, deque
 import math
+import os
+from evaluate import evaluate_HIV
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 env = TimeLimit(
@@ -35,7 +24,7 @@ n_action = env.action_space.n
 nb_neurons=24
 
 class ReplayBuffer:
-    def __init__(self, capacity, device):
+    def _init_(self, capacity, device):
         self.capacity = int(capacity) # capacity of the buffer
         self.data = []
         self.index = 0 # index of the next cell to be filled
@@ -48,7 +37,7 @@ class ReplayBuffer:
     def sample(self, batch_size):
         batch = random.sample(self.data, batch_size)
         return list(map(lambda x:torch.Tensor(np.array(x)).to(self.device), list(zip(*batch))))
-    def __len__(self):
+    def _len_(self):
         return len(self.data)
     
 def greedy_action(network, state):
@@ -57,16 +46,15 @@ def greedy_action(network, state):
         Q = network(torch.Tensor(state).unsqueeze(0).to(device))
         return torch.argmax(Q).item()
 
-
-
 class ProjectAgent:
-    def __init__(self):
+    def _init_(self):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         state_dim = env.observation_space.shape[0]
         n_action = env.action_space.n 
         
-        nb_neurons = 128
-        model = DQN = DQN = torch.nn.Sequential(
+        nb_neurons=256 
+
+        model = DQN = torch.nn.Sequential(
             nn.Linear(state_dim, nb_neurons),
             #nn.SiLU(), ReLU seems to work better
             nn.ReLU(),
@@ -87,17 +75,17 @@ class ProjectAgent:
 
         config = {'nb_actions': env.action_space.n,
             'learning_rate': 0.001,
-            'gamma': 0.95,
-            'buffer_size': 10000,
-            'epsilon_min': 0.01,
+            'gamma': 0.98,
+            'buffer_size': 100000,
+            'epsilon_min': 0.02,
             'epsilon_max': 1.,
-            'epsilon_decay_period': 5000,
-            'epsilon_delay_decay': 50,
-            'batch_size': 64,
-            'gradient_steps': 5,
-            'update_target_strategy': 'ema',
-            'update_target_freq': 50,
-            'update_target_tau': 0.01,
+            'epsilon_decay_period': 21000,
+            'epsilon_delay_decay': 100,
+            'batch_size': 790,
+            'gradient_steps': 3,
+            'update_target_strategy': 'replace',
+            'update_target_freq': 400,
+            'update_target_tau': 0.005,
             'criterion': torch.nn.SmoothL1Loss()}
 
         self.nb_actions = config['nb_actions']
@@ -166,12 +154,12 @@ class ProjectAgent:
         MC_avg_total_reward = []   # NEW NEW NEW
         MC_avg_discounted_reward = []   # NEW NEW NEW
         V_init_state = []   # NEW NEW NEW
-        previous_val = 0
         episode = 0
         episode_cum_reward = 0
         state, _ = env.reset()
         epsilon = self.epsilon_max
         step = 0
+        previous_val = 0
         while episode < max_episode:
             # update epsilon
             if step > self.epsilon_delay:
@@ -204,7 +192,6 @@ class ProjectAgent:
             if done or trunc:
                 episode += 1
                 # Monitoring
-                """
                 if self.monitoring_nb_trials>0:
                     MC_dr, MC_tr = self.MC_eval(env, self.monitoring_nb_trials)    # NEW NEW NEW
                     V0 = self.V_initial_state(env, self.monitoring_nb_trials)   # NEW NEW NEW
@@ -228,42 +215,28 @@ class ProjectAgent:
                           ", ep return ", '{:4.1f}'.format(episode_cum_reward), 
                           sep='')
 
-                """
-                validation_score = evaluate_HIV(agent=self, nb_episode=1)
-                                
+
+                validation_score = evaluate_HIV(agent=self, nb_episode=1)          
                 print(f"Episode {episode:3d} | "
                       f"Epsilon {epsilon:6.2f} | "
                       f"Batch Size {len(self.memory):5d} | "
                       f"Episode Return {episode_cum_reward:.2e} | "
                       f"Evaluation Score {validation_score:.2e}")
                 state, _ = env.reset()
-
                 if validation_score > previous_val:
                     previous_val = validation_score
                     self.best_model = deepcopy(self.model).to(device)
-                    path = os.getcwd()
-                    self.save(path)
-                episode_return.append(episode_cum_reward)
-                
+                    self.save("model_new.pth")
                 episode_cum_reward = 0
             else:
                 state = next_state
 
         self.model.load_state_dict(self.best_model.state_dict())
-        path = os.getcwd()
-        self.save(path)
-        return episode_return
-                
-        """       
-                state, _ = env.reset()
-                episode_cum_reward = 0
-            else:
-                state = next_state
+        self.save("model_new.pth")
         return episode_return, MC_avg_discounted_reward, MC_avg_total_reward, V_init_state
-        """
     
     def load(self):
-        path = 'model.pth'
+        path = 'model_new.pth'
         checkpoint = torch.load(path, map_location=torch.device('cpu'))  # Load on CPU
         self.model.load_state_dict(checkpoint['policy_net_state_dict'])
         self.target_model.load_state_dict(checkpoint['target_net_state_dict'])
@@ -271,7 +244,6 @@ class ProjectAgent:
         print(f"Model loaded from {path}.")
 
     def save(self, path: str) -> None:
-        path = os.path.join(path, "model.pth") if os.path.isdir(path) else path 
         torch.save({
             'policy_net_state_dict': self.model.state_dict(),
             'target_net_state_dict': self.target_model.state_dict(),
@@ -289,9 +261,8 @@ class ProjectAgent:
                 return self.model(observation).max(1)[1].view(1, 1)
     
 
-if __name__ == "__main__":
+
+if _name_ == "_main_":
     # Train agent
     agent = ProjectAgent()
-    scores = agent.train(env, 300)
-    # save model
-    #agent.save(file_path)
+    scores = agent.train(env, 350)
