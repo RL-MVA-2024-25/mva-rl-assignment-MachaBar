@@ -27,6 +27,7 @@ def test_expected_result_one_env_1e10():
     with open("score.txt") as file:
         lines = [float(line.rstrip()) for line in file]
     one_env_performance = lines[0]
+    #print(one_env_performance)
     assert one_env_performance >= 1e10
 
 def test_expected_result_one_env_2e10():
@@ -64,3 +65,10 @@ def test_expected_result_dr_env_5e10():
         lines = [float(line.rstrip()) for line in file]
     dr_env_performance = lines[1]
     assert dr_env_performance >= 5e10
+
+#test_expected_result_one_env_3432807()
+#test_expected_result_one_env_1e8()
+#test_expected_result_one_env_1e9()
+#test_expected_result_one_env_1e10()
+#test_expected_result_one_env_2e10()
+#test_expected_result_dr_env_5e10()
