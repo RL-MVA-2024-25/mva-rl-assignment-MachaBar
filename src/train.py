@@ -263,7 +263,7 @@ class ProjectAgent:
         """
     
     def load(self):
-        path = 'model.pth'
+        path = os.path.join(path, "model.pth") if os.path.isdir(path) else path 
         checkpoint = torch.load(path, map_location=torch.device('cpu'))  # Load on CPU
         self.model.load_state_dict(checkpoint['policy_net_state_dict'])
         self.target_model.load_state_dict(checkpoint['target_net_state_dict'])
